@@ -1,7 +1,7 @@
 // Based on sample from:
 // https://github.com/actix/examples/tree/master/http-proxy
 
-use std::process;
+use std::{fs, process};
 use clap::{Parser, CommandFactory};
 use actix_web::{error, middleware, web, App, HttpServer, Error, HttpRequest, HttpResponse};
 use awc::Client;
@@ -90,6 +90,14 @@ async fn forward(
     Err(error::ErrorNotFound("Not Found"))
 }
 
+fn validate_path_param(path: &std::path::Path, name: &str) -> () {
+    let metadata_result = fs::metadata(&path);
+    if !metadata_result.is_ok() || !metadata_result.unwrap().is_file() {
+        eprintln!("--{} '{}' is not a valid file", name, path.to_string_lossy());
+        process::exit(1);
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
@@ -97,9 +105,23 @@ async fn main() -> std::io::Result<()> {
     let args: Cli = Cli::parse();
 
     if args.forward_base_urls.len() < 1 {
-        eprintln!("Must specify at least one proxy base url");
+        eprintln!("Must specify at least one proxy base url\n");
         Cli::command().print_help().expect("failed to print usage");
         process::exit(1);
+    }
+
+    if args.key_path.is_some() != args.pem_path.is_some() {
+        eprintln!("keyPath and pemPath must both be specified to enable TLS\n");
+        Cli::command().print_help().expect("failed to print usage");
+        process::exit(1);
+    }
+
+    if let Some(path) = args.key_path {
+        validate_path_param(&path, "keyPath");
+    }
+
+    if let Some(path) = args.pem_path {
+        validate_path_param(&path, "pemPath");
     }
 
     let mut forward_base_urls: Vec<Url> = vec![];
