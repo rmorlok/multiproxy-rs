@@ -1,9 +1,11 @@
 // Based on sample from:
 // https://github.com/actix/examples/tree/master/http-proxy
 
-use clap::Parser;
+use std::process;
+use clap::{Parser, CommandFactory};
 use actix_web::{error, middleware, web, App, HttpServer, Error, HttpRequest, HttpResponse};
 use awc::Client;
+use awc::http::StatusCode;
 use url::Url;
 
 #[derive(Parser)]
@@ -27,43 +29,65 @@ struct Cli {
     #[clap(value_parser = clap::value_parser!(u16).range(1..65535), long = "port", default_value_t = 8888)]
     port: u16,
 
-    #[clap(value_parser)]
+    #[clap(value_parser,)]
     forward_base_urls: Vec<String>
 }
 
 async fn forward(
     req: HttpRequest,
-    payload: web::Payload,
-    url: web::Data<Url>,
+    _payload: web::Payload,
+    forward_base_urls: web::Data<Vec<Url>>,
     client: web::Data<Client>,
 ) -> Result<HttpResponse, Error> {
-    let mut new_url = url.get_ref().clone();
-    new_url.set_path(req.uri().path());
-    new_url.set_query(req.uri().query());
+    for base_url in forward_base_urls.get_ref() {
+        let base_path = base_url.path();
+        let path = if base_path == "" || base_path == "/" {
+            req.uri().path().to_string()
+        } else if base_path.ends_with("/") {
+            let req_path = req.uri().path();
+            let skip_slash: String = req_path.chars().skip(1).take(req_path.len() - 1).collect();
+            format!["{}{}", base_path, skip_slash]
+        } else {
+            format!["{}{}", base_path, req.uri().path()]
+        };
 
-    // TODO: This forwarded implementation is incomplete as it only handles the unofficial
-    // X-Forwarded-For header but not the official Forwarded one.
-    let forwarded_req = client
-        .request_from(new_url.as_str(), req.head())
-        .no_decompress();
-    let forwarded_req = match req.head().peer_addr {
-        Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
-        None => forwarded_req,
-    };
+        let mut new_url = base_url.clone();
+        new_url.set_path(&path);
+        new_url.set_query(req.uri().query());
 
-    let res = forwarded_req
-        .send_stream(payload)
-        .await
-        .map_err(error::ErrorInternalServerError)?;
+        log::info!("requesting {}", new_url.to_string());
 
-    let mut client_resp = HttpResponse::build(res.status());
-    // Remove `Connection` as per
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
-    for (header_name, header_value) in res.headers().iter().filter(|(h, _)| *h != "connection") {
-        client_resp.insert_header((header_name.clone(), header_value.clone()));
+        // TODO: This forwarded implementation is incomplete as it only handles the unofficial
+        // X-Forwarded-For header but not the official Forwarded one.
+        let forwarded_req = client
+            .request_from(new_url.as_str(), req.head())
+            .no_decompress();
+        /*let forwarded_req = match req.head().peer_addr {
+            Some(addr) => forwarded_req.insert_header(("x-forwarded-for", format!("{}", addr.ip()))),
+            None => forwarded_req,
+        };*/
+
+        let res = forwarded_req
+            .send()
+            .await.expect("test");
+            //.map_err(error::ErrorInternalServerError)?;
+
+        log::info!("Response status: {}", res.status());
+
+        if res.status() < StatusCode::from_u16(400).unwrap() {
+            let mut client_resp = HttpResponse::build(res.status());
+
+            // Remove `Connection` as per
+            // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Connection#Directives
+            for (header_name, header_value) in res.headers().iter().filter(|(h, _)| *h != "connection") {
+                client_resp.insert_header((header_name.clone(), header_value.clone()));
+            }
+
+            return Ok(client_resp.streaming(res));
+        }
     }
 
-    Ok(client_resp.streaming(res))
+    Err(error::ErrorNotFound("Not Found"))
 }
 
 #[actix_web::main]
@@ -71,6 +95,26 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
     let args: Cli = Cli::parse();
+
+    if args.forward_base_urls.len() < 1 {
+        eprintln!("Must specify at least one proxy base url");
+        Cli::command().print_help().expect("failed to print usage");
+        process::exit(1);
+    }
+
+    let mut forward_base_urls: Vec<Url> = vec![];
+
+    for url_string in args.forward_base_urls {
+        let url = match Url::parse(&url_string) {
+            Ok(v) => v,
+            Err(_) => {
+                eprintln!("Invalid base url '{}' specified", url_string);
+                process::exit(1);
+            }
+        };
+
+        forward_base_urls.push(url);
+    }
 
     log::info!(
         "starting HTTP server at http://{}:{}",
@@ -80,8 +124,8 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(forward_base_urls.clone()))
             .app_data(web::Data::new(Client::default()))
-            .app_data(web::Data::new(args.forward_base_urls.clone()))
             .wrap(middleware::Logger::default())
             .default_service(web::to(forward))
     })

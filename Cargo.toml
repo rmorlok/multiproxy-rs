@@ -6,9 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rustls = "0.20.6"
 clap = { version = "3.2.5", features = ["derive"] }
-actix-web = "4"
-awc = "3.0.0"
+actix-web = { version = "4", features=["rustls"]}
+awc = { version=  "3.0.0", features=["rustls"]}
 url = "2.2"
 log = "0.4"
 env_logger = "0.9"
