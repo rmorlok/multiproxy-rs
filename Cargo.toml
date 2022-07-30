@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 rustls = "0.20.6"
 rustls-pemfile = "1.0"
+rcgen = "0.9"
 clap = { version = "3.2.5", features = ["derive"] }
 actix-web = { version = "4", features=["rustls"]}
 awc = { version=  "3.0.0", features=["rustls"]}
