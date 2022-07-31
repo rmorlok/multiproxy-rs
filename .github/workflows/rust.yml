@@ -20,3 +20,9 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Starting server for curl test
+      run: nohup ./target/debug/multiproxy https://hmpioneers.net/hockey/ https://example.com/ &
+    - name: Get content from 1st website
+      run: curl -f -s "http://0.0.0.0:8888/" | grep "Hill-Murray"
+    - name: Get content from 2nd website
+      run: curl -f -s "http://0.0.0.0:8888/foo" | grep example
