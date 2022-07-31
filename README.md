@@ -22,6 +22,25 @@ uploads could go to your development S3 bucket. Of course, this only works if th
 Multiproxy supports http and https, and path prefixes on the hosts so that the hosts do not need to be aligned at the
 root level.
 
+## Real World Example
+
+To demonstrate a real example of multiplexing, use the following example:
+
+```bash
+# Start the server
+cargo run -- https://www.rust-lang.org/ https://hmpioneers.net/hockey/
+
+# Run a request that will find a valid response on the first website
+curl -f -s "http://0.0.0.0:8888/learn" | grep "Rust"
+
+# Run a request that will find a valid response on the second website
+curl -f -s "http://0.0.0.0:8888/history.htm" | grep "Hill-Murray"
+```
+
+Note how the multiproxy falls back to the second site when it can't find the content on the first. This tool supports
+an arbitrary number of fallbacks.
+
+
 ## Running with a Let's Encrypt Certificate
 
 Follow the instructions on [Certbot](https://certbot.eff.org/) to receive a certificate.
