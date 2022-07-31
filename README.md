@@ -21,3 +21,26 @@ uploads could go to your development S3 bucket. Of course, this only works if th
 
 Multiproxy supports http and https, and path prefixes on the hosts so that the hosts do not need to be aligned at the
 root level.
+
+## Running with a Let's Encrypt Certificate
+
+Follow the instructions on [Certbot](https://certbot.eff.org/) to receive a certificate.
+
+## Manually generating Certificates Locally
+
+Per [this StackOverflow question](https://stackoverflow.com/questions/8169999/how-can-i-create-a-self-signed-cert-for-localhost),
+use the following commands on MacOS:
+
+```bash
+# Use 'localhost' for the 'Common name'
+openssl req -x509 -sha256 -nodes -newkey rsa:2048 -days 365 -keyout localhost.key -out localhost.crt
+
+# Trust the certificate locally
+sudo security add-trusted-cert -p ssl -d -r trustRoot -k ~/Library/Keychains/login.keychain localhost.crt
+```
+
+You can then launch `multiproxy` using the generated cert with the following command:
+
+```bash
+cargo run -- --pemPath ./localhost.crt  --keyPath ./localhost.key https://example.com/
+```

@@ -1,5 +1,7 @@
 // Based on sample from:
 // https://github.com/actix/examples/tree/master/http-proxy
+// and
+// https://quinn-rs.github.io/quinn/quinn/certificate.html
 
 use actix_web::{error, middleware, web, App, HttpServer, Error, HttpRequest, HttpResponse};
 use awc::Client;
@@ -23,7 +25,7 @@ pub struct Cli {
     #[clap(parse(from_os_str), long = "keyPath")]
     pub key_path: Option<std::path::PathBuf>,
 
-    #[clap(long = "selfSignedTls", default_value_t = true)]
+    #[clap(long = "selfSignedTls")]
     pub self_signed_tls: bool,
 
     #[clap(long = "protocol", default_value_t = String::from("http"))]
@@ -57,7 +59,7 @@ impl Cli {
     }
 
     pub fn validate_tls_params(&self) -> () {
-        if self.self_signed_tls && (self.key_path.is_some() || self.pem_path.is_some()) {
+        if self.self_signed_tls == true && (self.key_path.is_some() || self.pem_path.is_some()) {
             eprintln!("Cannot specify selfSignedTls in conjunction with keyPath and pemPath\n");
             Cli::command().print_help().expect("failed to print usage");
             process::exit(1);
